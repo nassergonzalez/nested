@@ -1,14 +1,6 @@
-# Complete SQS Queue Example
+# Complete EC2 instance
 
-Configuration in this directory creates:
-- Queue using module default settings
-- FIFO (first-in, first-out) queue
-- Unencrypted queue (encryption disabled)
-- Queue encrypted with customer managed KMS key
-- Queue encrypted with default SQS SSE (server-side encryption) w/ separate dead-letter queue
-  - Dead letter queue created in separate module definition
-- Queue with dead-letter queue created in the same module defintion w/ queue policies for both the source queue and dead-letter queue
-- Disabled queue (no resources created)
+Configuration in this directory creates EC2 instances with different sets of arguments (with Elastic IP, with network interface attached, with credit specifications).
 
 ## Usage
 
@@ -20,7 +12,7 @@ $ terraform plan
 $ terraform apply
 ```
 
-Note that this example may create resources which cost money. Run `terraform destroy` when you don't need these resources.
+Note that this example may create resources which can cost money. Run `terraform destroy` when you don't need these resources.
 
 <!-- BEGIN_TF_DOCS -->
 ## Requirements
@@ -28,33 +20,45 @@ Note that this example may create resources which cost money. Run `terraform des
 | Name | Version |
 |------|---------|
 | <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.0 |
-| <a name="requirement_aws"></a> [aws](#requirement\_aws) | >= 4.36 |
+| <a name="requirement_aws"></a> [aws](#requirement\_aws) | >= 4.66 |
 
 ## Providers
 
 | Name | Version |
 |------|---------|
-| <a name="provider_aws"></a> [aws](#provider\_aws) | >= 4.36 |
+| <a name="provider_aws"></a> [aws](#provider\_aws) | >= 4.66 |
 
 ## Modules
 
 | Name | Source | Version |
 |------|--------|---------|
-| <a name="module_cmk_encrypted_sqs"></a> [cmk\_encrypted\_sqs](#module\_cmk\_encrypted\_sqs) | ../../ | n/a |
-| <a name="module_default_sqs"></a> [default\_sqs](#module\_default\_sqs) | ../../ | n/a |
-| <a name="module_disabled_sqs"></a> [disabled\_sqs](#module\_disabled\_sqs) | ../../ | n/a |
-| <a name="module_fifo_sqs"></a> [fifo\_sqs](#module\_fifo\_sqs) | ../../ | n/a |
-| <a name="module_sqs_with_dlq"></a> [sqs\_with\_dlq](#module\_sqs\_with\_dlq) | ../../ | n/a |
-| <a name="module_sse_encrypted_dlq_sqs"></a> [sse\_encrypted\_dlq\_sqs](#module\_sse\_encrypted\_dlq\_sqs) | ../../ | n/a |
-| <a name="module_sse_encrypted_sqs"></a> [sse\_encrypted\_sqs](#module\_sse\_encrypted\_sqs) | ../../ | n/a |
-| <a name="module_unencrypted_sqs"></a> [unencrypted\_sqs](#module\_unencrypted\_sqs) | ../../ | n/a |
+| <a name="module_ec2_complete"></a> [ec2\_complete](#module\_ec2\_complete) | ../../ | n/a |
+| <a name="module_ec2_cpu_options"></a> [ec2\_cpu\_options](#module\_ec2\_cpu\_options) | ../../ | n/a |
+| <a name="module_ec2_disabled"></a> [ec2\_disabled](#module\_ec2\_disabled) | ../../ | n/a |
+| <a name="module_ec2_ignore_ami_changes"></a> [ec2\_ignore\_ami\_changes](#module\_ec2\_ignore\_ami\_changes) | ../../ | n/a |
+| <a name="module_ec2_metadata_options"></a> [ec2\_metadata\_options](#module\_ec2\_metadata\_options) | ../../ | n/a |
+| <a name="module_ec2_multiple"></a> [ec2\_multiple](#module\_ec2\_multiple) | ../../ | n/a |
+| <a name="module_ec2_network_interface"></a> [ec2\_network\_interface](#module\_ec2\_network\_interface) | ../../ | n/a |
+| <a name="module_ec2_open_capacity_reservation"></a> [ec2\_open\_capacity\_reservation](#module\_ec2\_open\_capacity\_reservation) | ../../ | n/a |
+| <a name="module_ec2_spot_instance"></a> [ec2\_spot\_instance](#module\_ec2\_spot\_instance) | ../../ | n/a |
+| <a name="module_ec2_t2_unlimited"></a> [ec2\_t2\_unlimited](#module\_ec2\_t2\_unlimited) | ../../ | n/a |
+| <a name="module_ec2_t3_unlimited"></a> [ec2\_t3\_unlimited](#module\_ec2\_t3\_unlimited) | ../../ | n/a |
+| <a name="module_ec2_targeted_capacity_reservation"></a> [ec2\_targeted\_capacity\_reservation](#module\_ec2\_targeted\_capacity\_reservation) | ../../ | n/a |
+| <a name="module_security_group"></a> [security\_group](#module\_security\_group) | terraform-aws-modules/security-group/aws | ~> 4.0 |
+| <a name="module_vpc"></a> [vpc](#module\_vpc) | terraform-aws-modules/vpc/aws | ~> 5.0 |
 
 ## Resources
 
 | Name | Type |
 |------|------|
+| [aws_ec2_capacity_reservation.open](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/ec2_capacity_reservation) | resource |
+| [aws_ec2_capacity_reservation.targeted](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/ec2_capacity_reservation) | resource |
 | [aws_kms_key.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/kms_key) | resource |
-| [aws_caller_identity.current](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/caller_identity) | data source |
+| [aws_network_interface.this](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/network_interface) | resource |
+| [aws_placement_group.web](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/placement_group) | resource |
+| [aws_ami.amazon_linux](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/ami) | data source |
+| [aws_ami.amazon_linux_23](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/ami) | data source |
+| [aws_availability_zones.available](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/availability_zones) | data source |
 
 ## Inputs
 
@@ -64,68 +68,58 @@ No inputs.
 
 | Name | Description |
 |------|-------------|
-| <a name="output_cmk_encrypted_sqs_dlq_arn"></a> [cmk\_encrypted\_sqs\_dlq\_arn](#output\_cmk\_encrypted\_sqs\_dlq\_arn) | The ARN of the SQS queue |
-| <a name="output_cmk_encrypted_sqs_dlq_id"></a> [cmk\_encrypted\_sqs\_dlq\_id](#output\_cmk\_encrypted\_sqs\_dlq\_id) | The URL for the created Amazon SQS queue |
-| <a name="output_cmk_encrypted_sqs_dlq_name"></a> [cmk\_encrypted\_sqs\_dlq\_name](#output\_cmk\_encrypted\_sqs\_dlq\_name) | The name of the SQS queue |
-| <a name="output_cmk_encrypted_sqs_dlq_url"></a> [cmk\_encrypted\_sqs\_dlq\_url](#output\_cmk\_encrypted\_sqs\_dlq\_url) | Same as `dead_letter_queue_id`: The URL for the created Amazon SQS queue |
-| <a name="output_cmk_encrypted_sqs_queue_arn"></a> [cmk\_encrypted\_sqs\_queue\_arn](#output\_cmk\_encrypted\_sqs\_queue\_arn) | The ARN of the SQS queue |
-| <a name="output_cmk_encrypted_sqs_queue_id"></a> [cmk\_encrypted\_sqs\_queue\_id](#output\_cmk\_encrypted\_sqs\_queue\_id) | The URL for the created Amazon SQS queue |
-| <a name="output_cmk_encrypted_sqs_queue_name"></a> [cmk\_encrypted\_sqs\_queue\_name](#output\_cmk\_encrypted\_sqs\_queue\_name) | The name of the SQS queue |
-| <a name="output_cmk_encrypted_sqs_queue_url"></a> [cmk\_encrypted\_sqs\_queue\_url](#output\_cmk\_encrypted\_sqs\_queue\_url) | Same as `queue_id`: The URL for the created Amazon SQS queue |
-| <a name="output_default_sqs_dlq_arn"></a> [default\_sqs\_dlq\_arn](#output\_default\_sqs\_dlq\_arn) | The ARN of the SQS queue |
-| <a name="output_default_sqs_dlq_id"></a> [default\_sqs\_dlq\_id](#output\_default\_sqs\_dlq\_id) | The URL for the created Amazon SQS queue |
-| <a name="output_default_sqs_dlq_name"></a> [default\_sqs\_dlq\_name](#output\_default\_sqs\_dlq\_name) | The name of the SQS queue |
-| <a name="output_default_sqs_dlq_url"></a> [default\_sqs\_dlq\_url](#output\_default\_sqs\_dlq\_url) | Same as `dead_letter_queue_id`: The URL for the created Amazon SQS queue |
-| <a name="output_default_sqs_queue_arn"></a> [default\_sqs\_queue\_arn](#output\_default\_sqs\_queue\_arn) | The ARN of the SQS queue |
-| <a name="output_default_sqs_queue_id"></a> [default\_sqs\_queue\_id](#output\_default\_sqs\_queue\_id) | The URL for the created Amazon SQS queue |
-| <a name="output_default_sqs_queue_name"></a> [default\_sqs\_queue\_name](#output\_default\_sqs\_queue\_name) | The name of the SQS queue |
-| <a name="output_default_sqs_queue_url"></a> [default\_sqs\_queue\_url](#output\_default\_sqs\_queue\_url) | Same as `queue_id`: The URL for the created Amazon SQS queue |
-| <a name="output_disabled_sqs_dlq_arn"></a> [disabled\_sqs\_dlq\_arn](#output\_disabled\_sqs\_dlq\_arn) | The ARN of the SQS queue |
-| <a name="output_disabled_sqs_dlq_id"></a> [disabled\_sqs\_dlq\_id](#output\_disabled\_sqs\_dlq\_id) | The URL for the created Amazon SQS queue |
-| <a name="output_disabled_sqs_dlq_name"></a> [disabled\_sqs\_dlq\_name](#output\_disabled\_sqs\_dlq\_name) | The name of the SQS queue |
-| <a name="output_disabled_sqs_dlq_url"></a> [disabled\_sqs\_dlq\_url](#output\_disabled\_sqs\_dlq\_url) | Same as `dead_letter_queue_id`: The URL for the created Amazon SQS queue |
-| <a name="output_disabled_sqs_queue_arn"></a> [disabled\_sqs\_queue\_arn](#output\_disabled\_sqs\_queue\_arn) | The ARN of the SQS queue |
-| <a name="output_disabled_sqs_queue_id"></a> [disabled\_sqs\_queue\_id](#output\_disabled\_sqs\_queue\_id) | The URL for the created Amazon SQS queue |
-| <a name="output_disabled_sqs_queue_name"></a> [disabled\_sqs\_queue\_name](#output\_disabled\_sqs\_queue\_name) | The name of the SQS queue |
-| <a name="output_disabled_sqs_queue_url"></a> [disabled\_sqs\_queue\_url](#output\_disabled\_sqs\_queue\_url) | Same as `queue_id`: The URL for the created Amazon SQS queue |
-| <a name="output_fifo_sqs_dlq_arn"></a> [fifo\_sqs\_dlq\_arn](#output\_fifo\_sqs\_dlq\_arn) | The ARN of the SQS queue |
-| <a name="output_fifo_sqs_dlq_id"></a> [fifo\_sqs\_dlq\_id](#output\_fifo\_sqs\_dlq\_id) | The URL for the created Amazon SQS queue |
-| <a name="output_fifo_sqs_dlq_name"></a> [fifo\_sqs\_dlq\_name](#output\_fifo\_sqs\_dlq\_name) | The name of the SQS queue |
-| <a name="output_fifo_sqs_dlq_url"></a> [fifo\_sqs\_dlq\_url](#output\_fifo\_sqs\_dlq\_url) | Same as `dead_letter_queue_id`: The URL for the created Amazon SQS queue |
-| <a name="output_fifo_sqs_queue_arn"></a> [fifo\_sqs\_queue\_arn](#output\_fifo\_sqs\_queue\_arn) | The ARN of the SQS queue |
-| <a name="output_fifo_sqs_queue_id"></a> [fifo\_sqs\_queue\_id](#output\_fifo\_sqs\_queue\_id) | The URL for the created Amazon SQS queue |
-| <a name="output_fifo_sqs_queue_name"></a> [fifo\_sqs\_queue\_name](#output\_fifo\_sqs\_queue\_name) | The name of the SQS queue |
-| <a name="output_fifo_sqs_queue_url"></a> [fifo\_sqs\_queue\_url](#output\_fifo\_sqs\_queue\_url) | Same as `queue_id`: The URL for the created Amazon SQS queue |
-| <a name="output_sqs_with_dlq_dlq_arn"></a> [sqs\_with\_dlq\_dlq\_arn](#output\_sqs\_with\_dlq\_dlq\_arn) | The ARN of the SQS queue |
-| <a name="output_sqs_with_dlq_dlq_id"></a> [sqs\_with\_dlq\_dlq\_id](#output\_sqs\_with\_dlq\_dlq\_id) | The URL for the created Amazon SQS queue |
-| <a name="output_sqs_with_dlq_dlq_name"></a> [sqs\_with\_dlq\_dlq\_name](#output\_sqs\_with\_dlq\_dlq\_name) | The name of the SQS queue |
-| <a name="output_sqs_with_dlq_dlq_url"></a> [sqs\_with\_dlq\_dlq\_url](#output\_sqs\_with\_dlq\_dlq\_url) | Same as `dead_letter_queue_id`: The URL for the created Amazon SQS queue |
-| <a name="output_sqs_with_dlq_queue_arn"></a> [sqs\_with\_dlq\_queue\_arn](#output\_sqs\_with\_dlq\_queue\_arn) | The ARN of the SQS queue |
-| <a name="output_sqs_with_dlq_queue_id"></a> [sqs\_with\_dlq\_queue\_id](#output\_sqs\_with\_dlq\_queue\_id) | The URL for the created Amazon SQS queue |
-| <a name="output_sqs_with_dlq_queue_name"></a> [sqs\_with\_dlq\_queue\_name](#output\_sqs\_with\_dlq\_queue\_name) | The name of the SQS queue |
-| <a name="output_sqs_with_dlq_queue_url"></a> [sqs\_with\_dlq\_queue\_url](#output\_sqs\_with\_dlq\_queue\_url) | Same as `queue_id`: The URL for the created Amazon SQS queue |
-| <a name="output_sse_encrypted_dlq_sqs_dlq_arn"></a> [sse\_encrypted\_dlq\_sqs\_dlq\_arn](#output\_sse\_encrypted\_dlq\_sqs\_dlq\_arn) | The ARN of the SQS queue |
-| <a name="output_sse_encrypted_dlq_sqs_dlq_id"></a> [sse\_encrypted\_dlq\_sqs\_dlq\_id](#output\_sse\_encrypted\_dlq\_sqs\_dlq\_id) | The URL for the created Amazon SQS queue |
-| <a name="output_sse_encrypted_dlq_sqs_dlq_name"></a> [sse\_encrypted\_dlq\_sqs\_dlq\_name](#output\_sse\_encrypted\_dlq\_sqs\_dlq\_name) | The name of the SQS queue |
-| <a name="output_sse_encrypted_dlq_sqs_dlq_url"></a> [sse\_encrypted\_dlq\_sqs\_dlq\_url](#output\_sse\_encrypted\_dlq\_sqs\_dlq\_url) | Same as `dead_letter_queue_id`: The URL for the created Amazon SQS queue |
-| <a name="output_sse_encrypted_dlq_sqs_queue_arn"></a> [sse\_encrypted\_dlq\_sqs\_queue\_arn](#output\_sse\_encrypted\_dlq\_sqs\_queue\_arn) | The ARN of the SQS queue |
-| <a name="output_sse_encrypted_dlq_sqs_queue_id"></a> [sse\_encrypted\_dlq\_sqs\_queue\_id](#output\_sse\_encrypted\_dlq\_sqs\_queue\_id) | The URL for the created Amazon SQS queue |
-| <a name="output_sse_encrypted_dlq_sqs_queue_name"></a> [sse\_encrypted\_dlq\_sqs\_queue\_name](#output\_sse\_encrypted\_dlq\_sqs\_queue\_name) | The name of the SQS queue |
-| <a name="output_sse_encrypted_dlq_sqs_queue_url"></a> [sse\_encrypted\_dlq\_sqs\_queue\_url](#output\_sse\_encrypted\_dlq\_sqs\_queue\_url) | Same as `queue_id`: The URL for the created Amazon SQS queue |
-| <a name="output_sse_encrypted_sqs_dlq_arn"></a> [sse\_encrypted\_sqs\_dlq\_arn](#output\_sse\_encrypted\_sqs\_dlq\_arn) | The ARN of the SQS queue |
-| <a name="output_sse_encrypted_sqs_dlq_id"></a> [sse\_encrypted\_sqs\_dlq\_id](#output\_sse\_encrypted\_sqs\_dlq\_id) | The URL for the created Amazon SQS queue |
-| <a name="output_sse_encrypted_sqs_dlq_name"></a> [sse\_encrypted\_sqs\_dlq\_name](#output\_sse\_encrypted\_sqs\_dlq\_name) | The name of the SQS queue |
-| <a name="output_sse_encrypted_sqs_dlq_url"></a> [sse\_encrypted\_sqs\_dlq\_url](#output\_sse\_encrypted\_sqs\_dlq\_url) | Same as `dead_letter_queue_id`: The URL for the created Amazon SQS queue |
-| <a name="output_sse_encrypted_sqs_queue_arn"></a> [sse\_encrypted\_sqs\_queue\_arn](#output\_sse\_encrypted\_sqs\_queue\_arn) | The ARN of the SQS queue |
-| <a name="output_sse_encrypted_sqs_queue_id"></a> [sse\_encrypted\_sqs\_queue\_id](#output\_sse\_encrypted\_sqs\_queue\_id) | The URL for the created Amazon SQS queue |
-| <a name="output_sse_encrypted_sqs_queue_name"></a> [sse\_encrypted\_sqs\_queue\_name](#output\_sse\_encrypted\_sqs\_queue\_name) | The name of the SQS queue |
-| <a name="output_sse_encrypted_sqs_queue_url"></a> [sse\_encrypted\_sqs\_queue\_url](#output\_sse\_encrypted\_sqs\_queue\_url) | Same as `queue_id`: The URL for the created Amazon SQS queue |
-| <a name="output_unencrypted_sqs_dlq_arn"></a> [unencrypted\_sqs\_dlq\_arn](#output\_unencrypted\_sqs\_dlq\_arn) | The ARN of the SQS queue |
-| <a name="output_unencrypted_sqs_dlq_id"></a> [unencrypted\_sqs\_dlq\_id](#output\_unencrypted\_sqs\_dlq\_id) | The URL for the created Amazon SQS queue |
-| <a name="output_unencrypted_sqs_dlq_name"></a> [unencrypted\_sqs\_dlq\_name](#output\_unencrypted\_sqs\_dlq\_name) | The name of the SQS queue |
-| <a name="output_unencrypted_sqs_dlq_url"></a> [unencrypted\_sqs\_dlq\_url](#output\_unencrypted\_sqs\_dlq\_url) | Same as `dead_letter_queue_id`: The URL for the created Amazon SQS queue |
-| <a name="output_unencrypted_sqs_queue_arn"></a> [unencrypted\_sqs\_queue\_arn](#output\_unencrypted\_sqs\_queue\_arn) | The ARN of the SQS queue |
-| <a name="output_unencrypted_sqs_queue_id"></a> [unencrypted\_sqs\_queue\_id](#output\_unencrypted\_sqs\_queue\_id) | The URL for the created Amazon SQS queue |
-| <a name="output_unencrypted_sqs_queue_name"></a> [unencrypted\_sqs\_queue\_name](#output\_unencrypted\_sqs\_queue\_name) | The name of the SQS queue |
-| <a name="output_unencrypted_sqs_queue_url"></a> [unencrypted\_sqs\_queue\_url](#output\_unencrypted\_sqs\_queue\_url) | Same as `queue_id`: The URL for the created Amazon SQS queue |
+| <a name="output_ec2_complete_arn"></a> [ec2\_complete\_arn](#output\_ec2\_complete\_arn) | The ARN of the instance |
+| <a name="output_ec2_complete_availability_zone"></a> [ec2\_complete\_availability\_zone](#output\_ec2\_complete\_availability\_zone) | The availability zone of the created instance |
+| <a name="output_ec2_complete_capacity_reservation_specification"></a> [ec2\_complete\_capacity\_reservation\_specification](#output\_ec2\_complete\_capacity\_reservation\_specification) | Capacity reservation specification of the instance |
+| <a name="output_ec2_complete_ebs_block_device"></a> [ec2\_complete\_ebs\_block\_device](#output\_ec2\_complete\_ebs\_block\_device) | EBS block device information |
+| <a name="output_ec2_complete_ephemeral_block_device"></a> [ec2\_complete\_ephemeral\_block\_device](#output\_ec2\_complete\_ephemeral\_block\_device) | Ephemeral block device information |
+| <a name="output_ec2_complete_iam_instance_profile_arn"></a> [ec2\_complete\_iam\_instance\_profile\_arn](#output\_ec2\_complete\_iam\_instance\_profile\_arn) | ARN assigned by AWS to the instance profile |
+| <a name="output_ec2_complete_iam_instance_profile_id"></a> [ec2\_complete\_iam\_instance\_profile\_id](#output\_ec2\_complete\_iam\_instance\_profile\_id) | Instance profile's ID |
+| <a name="output_ec2_complete_iam_instance_profile_unique"></a> [ec2\_complete\_iam\_instance\_profile\_unique](#output\_ec2\_complete\_iam\_instance\_profile\_unique) | Stable and unique string identifying the IAM instance profile |
+| <a name="output_ec2_complete_iam_role_arn"></a> [ec2\_complete\_iam\_role\_arn](#output\_ec2\_complete\_iam\_role\_arn) | The Amazon Resource Name (ARN) specifying the IAM role |
+| <a name="output_ec2_complete_iam_role_name"></a> [ec2\_complete\_iam\_role\_name](#output\_ec2\_complete\_iam\_role\_name) | The name of the IAM role |
+| <a name="output_ec2_complete_iam_role_unique_id"></a> [ec2\_complete\_iam\_role\_unique\_id](#output\_ec2\_complete\_iam\_role\_unique\_id) | Stable and unique string identifying the IAM role |
+| <a name="output_ec2_complete_id"></a> [ec2\_complete\_id](#output\_ec2\_complete\_id) | The ID of the instance |
+| <a name="output_ec2_complete_instance_state"></a> [ec2\_complete\_instance\_state](#output\_ec2\_complete\_instance\_state) | The state of the instance. One of: `pending`, `running`, `shutting-down`, `terminated`, `stopping`, `stopped` |
+| <a name="output_ec2_complete_primary_network_interface_id"></a> [ec2\_complete\_primary\_network\_interface\_id](#output\_ec2\_complete\_primary\_network\_interface\_id) | The ID of the instance's primary network interface |
+| <a name="output_ec2_complete_private_dns"></a> [ec2\_complete\_private\_dns](#output\_ec2\_complete\_private\_dns) | The private DNS name assigned to the instance. Can only be used inside the Amazon EC2, and only available if you've enabled DNS hostnames for your VPC |
+| <a name="output_ec2_complete_public_dns"></a> [ec2\_complete\_public\_dns](#output\_ec2\_complete\_public\_dns) | The public DNS name assigned to the instance. For EC2-VPC, this is only available if you've enabled DNS hostnames for your VPC |
+| <a name="output_ec2_complete_public_ip"></a> [ec2\_complete\_public\_ip](#output\_ec2\_complete\_public\_ip) | The public IP address assigned to the instance, if applicable. NOTE: If you are using an aws\_eip with your instance, you should refer to the EIP's address directly and not use `public_ip` as this field will change after the EIP is attached |
+| <a name="output_ec2_complete_root_block_device"></a> [ec2\_complete\_root\_block\_device](#output\_ec2\_complete\_root\_block\_device) | Root block device information |
+| <a name="output_ec2_complete_tags_all"></a> [ec2\_complete\_tags\_all](#output\_ec2\_complete\_tags\_all) | A map of tags assigned to the resource, including those inherited from the provider default\_tags configuration block |
+| <a name="output_ec2_ignore_ami_changes_ami"></a> [ec2\_ignore\_ami\_changes\_ami](#output\_ec2\_ignore\_ami\_changes\_ami) | The AMI of the instance (ignore\_ami\_changes = true) |
+| <a name="output_ec2_multiple"></a> [ec2\_multiple](#output\_ec2\_multiple) | The full output of the `ec2_module` module |
+| <a name="output_ec2_spot_instance_arn"></a> [ec2\_spot\_instance\_arn](#output\_ec2\_spot\_instance\_arn) | The ARN of the instance |
+| <a name="output_ec2_spot_instance_capacity_reservation_specification"></a> [ec2\_spot\_instance\_capacity\_reservation\_specification](#output\_ec2\_spot\_instance\_capacity\_reservation\_specification) | Capacity reservation specification of the instance |
+| <a name="output_ec2_spot_instance_id"></a> [ec2\_spot\_instance\_id](#output\_ec2\_spot\_instance\_id) | The ID of the instance |
+| <a name="output_ec2_spot_instance_instance_state"></a> [ec2\_spot\_instance\_instance\_state](#output\_ec2\_spot\_instance\_instance\_state) | The state of the instance. One of: `pending`, `running`, `shutting-down`, `terminated`, `stopping`, `stopped` |
+| <a name="output_ec2_spot_instance_primary_network_interface_id"></a> [ec2\_spot\_instance\_primary\_network\_interface\_id](#output\_ec2\_spot\_instance\_primary\_network\_interface\_id) | The ID of the instance's primary network interface |
+| <a name="output_ec2_spot_instance_private_dns"></a> [ec2\_spot\_instance\_private\_dns](#output\_ec2\_spot\_instance\_private\_dns) | The private DNS name assigned to the instance. Can only be used inside the Amazon EC2, and only available if you've enabled DNS hostnames for your VPC |
+| <a name="output_ec2_spot_instance_public_dns"></a> [ec2\_spot\_instance\_public\_dns](#output\_ec2\_spot\_instance\_public\_dns) | The public DNS name assigned to the instance. For EC2-VPC, this is only available if you've enabled DNS hostnames for your VPC |
+| <a name="output_ec2_spot_instance_public_ip"></a> [ec2\_spot\_instance\_public\_ip](#output\_ec2\_spot\_instance\_public\_ip) | The public IP address assigned to the instance, if applicable. NOTE: If you are using an aws\_eip with your instance, you should refer to the EIP's address directly and not use `public_ip` as this field will change after the EIP is attached |
+| <a name="output_ec2_spot_instance_tags_all"></a> [ec2\_spot\_instance\_tags\_all](#output\_ec2\_spot\_instance\_tags\_all) | A map of tags assigned to the resource, including those inherited from the provider default\_tags configuration block |
+| <a name="output_ec2_t2_unlimited_arn"></a> [ec2\_t2\_unlimited\_arn](#output\_ec2\_t2\_unlimited\_arn) | The ARN of the instance |
+| <a name="output_ec2_t2_unlimited_availability_zone"></a> [ec2\_t2\_unlimited\_availability\_zone](#output\_ec2\_t2\_unlimited\_availability\_zone) | The availability zone of the created instance |
+| <a name="output_ec2_t2_unlimited_capacity_reservation_specification"></a> [ec2\_t2\_unlimited\_capacity\_reservation\_specification](#output\_ec2\_t2\_unlimited\_capacity\_reservation\_specification) | Capacity reservation specification of the instance |
+| <a name="output_ec2_t2_unlimited_id"></a> [ec2\_t2\_unlimited\_id](#output\_ec2\_t2\_unlimited\_id) | The ID of the instance |
+| <a name="output_ec2_t2_unlimited_instance_state"></a> [ec2\_t2\_unlimited\_instance\_state](#output\_ec2\_t2\_unlimited\_instance\_state) | The state of the instance. One of: `pending`, `running`, `shutting-down`, `terminated`, `stopping`, `stopped` |
+| <a name="output_ec2_t2_unlimited_primary_network_interface_id"></a> [ec2\_t2\_unlimited\_primary\_network\_interface\_id](#output\_ec2\_t2\_unlimited\_primary\_network\_interface\_id) | The ID of the instance's primary network interface |
+| <a name="output_ec2_t2_unlimited_private_dns"></a> [ec2\_t2\_unlimited\_private\_dns](#output\_ec2\_t2\_unlimited\_private\_dns) | The private DNS name assigned to the instance. Can only be used inside the Amazon EC2, and only available if you've enabled DNS hostnames for your VPC |
+| <a name="output_ec2_t2_unlimited_public_dns"></a> [ec2\_t2\_unlimited\_public\_dns](#output\_ec2\_t2\_unlimited\_public\_dns) | The public DNS name assigned to the instance. For EC2-VPC, this is only available if you've enabled DNS hostnames for your VPC |
+| <a name="output_ec2_t2_unlimited_public_ip"></a> [ec2\_t2\_unlimited\_public\_ip](#output\_ec2\_t2\_unlimited\_public\_ip) | The public IP address assigned to the instance, if applicable. NOTE: If you are using an aws\_eip with your instance, you should refer to the EIP's address directly and not use `public_ip` as this field will change after the EIP is attached |
+| <a name="output_ec2_t2_unlimited_tags_all"></a> [ec2\_t2\_unlimited\_tags\_all](#output\_ec2\_t2\_unlimited\_tags\_all) | A map of tags assigned to the resource, including those inherited from the provider default\_tags configuration block |
+| <a name="output_ec2_t3_unlimited_arn"></a> [ec2\_t3\_unlimited\_arn](#output\_ec2\_t3\_unlimited\_arn) | The ARN of the instance |
+| <a name="output_ec2_t3_unlimited_availability_zone"></a> [ec2\_t3\_unlimited\_availability\_zone](#output\_ec2\_t3\_unlimited\_availability\_zone) | The availability zone of the created instance |
+| <a name="output_ec2_t3_unlimited_capacity_reservation_specification"></a> [ec2\_t3\_unlimited\_capacity\_reservation\_specification](#output\_ec2\_t3\_unlimited\_capacity\_reservation\_specification) | Capacity reservation specification of the instance |
+| <a name="output_ec2_t3_unlimited_id"></a> [ec2\_t3\_unlimited\_id](#output\_ec2\_t3\_unlimited\_id) | The ID of the instance |
+| <a name="output_ec2_t3_unlimited_instance_state"></a> [ec2\_t3\_unlimited\_instance\_state](#output\_ec2\_t3\_unlimited\_instance\_state) | The state of the instance. One of: `pending`, `running`, `shutting-down`, `terminated`, `stopping`, `stopped` |
+| <a name="output_ec2_t3_unlimited_primary_network_interface_id"></a> [ec2\_t3\_unlimited\_primary\_network\_interface\_id](#output\_ec2\_t3\_unlimited\_primary\_network\_interface\_id) | The ID of the instance's primary network interface |
+| <a name="output_ec2_t3_unlimited_private_dns"></a> [ec2\_t3\_unlimited\_private\_dns](#output\_ec2\_t3\_unlimited\_private\_dns) | The private DNS name assigned to the instance. Can only be used inside the Amazon EC2, and only available if you've enabled DNS hostnames for your VPC |
+| <a name="output_ec2_t3_unlimited_public_dns"></a> [ec2\_t3\_unlimited\_public\_dns](#output\_ec2\_t3\_unlimited\_public\_dns) | The public DNS name assigned to the instance. For EC2-VPC, this is only available if you've enabled DNS hostnames for your VPC |
+| <a name="output_ec2_t3_unlimited_public_ip"></a> [ec2\_t3\_unlimited\_public\_ip](#output\_ec2\_t3\_unlimited\_public\_ip) | The public IP address assigned to the instance, if applicable. NOTE: If you are using an aws\_eip with your instance, you should refer to the EIP's address directly and not use `public_ip` as this field will change after the EIP is attached |
+| <a name="output_ec2_t3_unlimited_tags_all"></a> [ec2\_t3\_unlimited\_tags\_all](#output\_ec2\_t3\_unlimited\_tags\_all) | A map of tags assigned to the resource, including those inherited from the provider default\_tags configuration block |
+| <a name="output_spot_bid_status"></a> [spot\_bid\_status](#output\_spot\_bid\_status) | The current bid status of the Spot Instance Request |
+| <a name="output_spot_instance_availability_zone"></a> [spot\_instance\_availability\_zone](#output\_spot\_instance\_availability\_zone) | The availability zone of the created spot instance |
+| <a name="output_spot_instance_id"></a> [spot\_instance\_id](#output\_spot\_instance\_id) | The Instance ID (if any) that is currently fulfilling the Spot Instance request |
+| <a name="output_spot_request_state"></a> [spot\_request\_state](#output\_spot\_request\_state) | The current request state of the Spot Instance Request |
 <!-- END_TF_DOCS -->

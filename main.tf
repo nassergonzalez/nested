@@ -1,235 +1,622 @@
-data "aws_region" "current" {}
-
-data "aws_caller_identity" "current" {}
-
-################################################################################
-# Queue
-################################################################################
+data "aws_partition" "current" {}
 
 locals {
-  name = try(trimsuffix(var.name, ".fifo"), "")
+  create = var.create && var.putin_khuylo
+
+  is_t_instance_type = replace(var.instance_type, "/^t(2|3|3a|4g){1}\\..*$/", "1") == "1" ? true : false
+
+  ami = try(coalesce(var.ami, try(nonsensitive(data.aws_ssm_parameter.this[0].value), null)), null)
 }
 
-resource "aws_sqs_queue" "this" {
-  count = var.create ? 1 : 0
+data "aws_ssm_parameter" "this" {
+  count = local.create && var.ami == null ? 1 : 0
 
-  content_based_deduplication       = var.content_based_deduplication
-  deduplication_scope               = var.deduplication_scope
-  delay_seconds                     = var.delay_seconds
-  fifo_queue                        = var.fifo_queue
-  fifo_throughput_limit             = var.fifo_throughput_limit
-  kms_data_key_reuse_period_seconds = var.kms_data_key_reuse_period_seconds
-  kms_master_key_id                 = var.kms_master_key_id
-  max_message_size                  = var.max_message_size
-  message_retention_seconds         = var.message_retention_seconds
-  name                              = var.use_name_prefix ? null : (var.fifo_queue ? "${local.name}.fifo" : local.name)
-  name_prefix                       = var.use_name_prefix ? "${local.name}-" : null
-  receive_wait_time_seconds         = var.receive_wait_time_seconds
-  sqs_managed_sse_enabled           = var.kms_master_key_id != null ? null : var.sqs_managed_sse_enabled
-  visibility_timeout_seconds        = var.visibility_timeout_seconds
-
-  tags = var.tags
+  name = var.ami_ssm_parameter
 }
 
 ################################################################################
-# Queue Policy
+# Instance
 ################################################################################
 
-data "aws_iam_policy_document" "this" {
-  count = var.create && var.create_queue_policy ? 1 : 0
+resource "aws_instance" "this" {
+  count = local.create && !var.ignore_ami_changes && !var.create_spot_instance ? 1 : 0
 
-  source_policy_documents   = var.source_queue_policy_documents
-  override_policy_documents = var.override_queue_policy_documents
+  ami                  = local.ami
+  instance_type        = var.instance_type
+  cpu_core_count       = var.cpu_core_count
+  cpu_threads_per_core = var.cpu_threads_per_core
+  hibernation          = var.hibernation
 
-  dynamic "statement" {
-    for_each = var.queue_policy_statements
+  user_data                   = var.user_data
+  user_data_base64            = var.user_data_base64
+  user_data_replace_on_change = var.user_data_replace_on_change
+
+  availability_zone      = var.availability_zone
+  subnet_id              = var.subnet_id
+  vpc_security_group_ids = var.vpc_security_group_ids
+
+  key_name             = var.key_name
+  monitoring           = var.monitoring
+  get_password_data    = var.get_password_data
+  iam_instance_profile = var.create_iam_instance_profile ? aws_iam_instance_profile.this[0].name : var.iam_instance_profile
+
+  associate_public_ip_address = var.associate_public_ip_address
+  private_ip                  = var.private_ip
+  secondary_private_ips       = var.secondary_private_ips
+  ipv6_address_count          = var.ipv6_address_count
+  ipv6_addresses              = var.ipv6_addresses
+
+  ebs_optimized = var.ebs_optimized
+
+  dynamic "cpu_options" {
+    for_each = length(var.cpu_options) > 0 ? [var.cpu_options] : []
 
     content {
-      sid           = try(statement.value.sid, null)
-      actions       = try(statement.value.actions, null)
-      not_actions   = try(statement.value.not_actions, null)
-      effect        = try(statement.value.effect, null)
-      resources     = try(statement.value.resources, [aws_sqs_queue.this[0].arn])
-      not_resources = try(statement.value.not_resources, null)
+      core_count       = try(cpu_options.value.core_count, null)
+      threads_per_core = try(cpu_options.value.threads_per_core, null)
+      amd_sev_snp      = try(cpu_options.value.amd_sev_snp, null)
+    }
+  }
 
-      dynamic "principals" {
-        for_each = try(statement.value.principals, [])
+  dynamic "capacity_reservation_specification" {
+    for_each = length(var.capacity_reservation_specification) > 0 ? [var.capacity_reservation_specification] : []
 
-        content {
-          type        = principals.value.type
-          identifiers = principals.value.identifiers
-        }
-      }
+    content {
+      capacity_reservation_preference = try(capacity_reservation_specification.value.capacity_reservation_preference, null)
 
-      dynamic "not_principals" {
-        for_each = try(statement.value.not_principals, [])
+      dynamic "capacity_reservation_target" {
+        for_each = try([capacity_reservation_specification.value.capacity_reservation_target], [])
 
         content {
-          type        = not_principals.value.type
-          identifiers = not_principals.value.identifiers
-        }
-      }
-
-      dynamic "condition" {
-        for_each = try(statement.value.conditions, [])
-
-        content {
-          test     = condition.value.test
-          values   = condition.value.values
-          variable = condition.value.variable
+          capacity_reservation_id                 = try(capacity_reservation_target.value.capacity_reservation_id, null)
+          capacity_reservation_resource_group_arn = try(capacity_reservation_target.value.capacity_reservation_resource_group_arn, null)
         }
       }
     }
   }
-}
 
-resource "aws_sqs_queue_policy" "this" {
-  count = var.create && var.create_queue_policy ? 1 : 0
-
-  queue_url = aws_sqs_queue.this[0].url
-  policy    = data.aws_iam_policy_document.this[0].json
-}
-
-################################################################################
-# Re-drive Policy
-################################################################################
-
-resource "aws_sqs_queue_redrive_policy" "this" {
-  count = var.create && !var.create_dlq && length(var.redrive_policy) > 0 ? 1 : 0
-
-  queue_url      = aws_sqs_queue.this[0].url
-  redrive_policy = jsonencode(var.redrive_policy)
-}
-
-resource "aws_sqs_queue_redrive_policy" "dlq" {
-  count = var.create && var.create_dlq ? 1 : 0
-
-  queue_url = aws_sqs_queue.this[0].url
-  redrive_policy = jsonencode(
-    merge(
-      {
-        deadLetterTargetArn = aws_sqs_queue.dlq[0].arn
-        maxReceiveCount     = 5
-      },
-      var.redrive_policy
-    )
-  )
-}
-
-################################################################################
-# Dead Letter Queue
-################################################################################
-
-locals {
-  stripped_dlq_name = try(trimsuffix(var.dlq_name, ".fifo"), "")
-  inter_dlq_name    = try(coalesce(local.stripped_dlq_name, "${local.name}-dlq"), "")
-  dlq_name          = var.fifo_queue && !var.use_name_prefix ? "${local.inter_dlq_name}.fifo" : local.inter_dlq_name
-
-  dlq_kms_master_key_id       = try(coalesce(var.dlq_kms_master_key_id, var.kms_master_key_id), null)
-  dlq_sqs_managed_sse_enabled = coalesce(var.dlq_sqs_managed_sse_enabled, var.sqs_managed_sse_enabled)
-}
-
-resource "aws_sqs_queue" "dlq" {
-  count = var.create && var.create_dlq ? 1 : 0
-
-  content_based_deduplication = try(coalesce(var.dlq_content_based_deduplication, var.content_based_deduplication), null)
-  deduplication_scope         = try(coalesce(var.dlq_deduplication_scope, var.deduplication_scope), null)
-  delay_seconds               = try(coalesce(var.dlq_delay_seconds, var.delay_seconds), null)
-  # If source queue is FIFO, DLQ must also be FIFO and vice versa
-  fifo_queue                        = var.fifo_queue
-  fifo_throughput_limit             = var.fifo_throughput_limit
-  kms_data_key_reuse_period_seconds = try(coalesce(var.dlq_kms_data_key_reuse_period_seconds, var.kms_data_key_reuse_period_seconds), null)
-  kms_master_key_id                 = local.dlq_kms_master_key_id
-  max_message_size                  = var.max_message_size
-  message_retention_seconds         = try(coalesce(var.dlq_message_retention_seconds, var.message_retention_seconds), null)
-  name                              = var.use_name_prefix ? null : local.dlq_name
-  name_prefix                       = var.use_name_prefix ? "${local.dlq_name}-" : null
-  receive_wait_time_seconds         = try(coalesce(var.dlq_receive_wait_time_seconds, var.receive_wait_time_seconds), null)
-  sqs_managed_sse_enabled           = local.dlq_kms_master_key_id != null ? null : local.dlq_sqs_managed_sse_enabled
-  visibility_timeout_seconds        = try(coalesce(var.dlq_visibility_timeout_seconds, var.visibility_timeout_seconds), null)
-
-  tags = merge(var.tags, var.dlq_tags)
-}
-
-################################################################################
-# Queue Policy
-################################################################################
-
-data "aws_iam_policy_document" "dlq" {
-  count = var.create && var.create_dlq && var.create_dlq_queue_policy ? 1 : 0
-
-  source_policy_documents   = var.source_dlq_queue_policy_documents
-  override_policy_documents = var.override_dlq_queue_policy_documents
-
-  dynamic "statement" {
-    for_each = var.dlq_queue_policy_statements
+  dynamic "root_block_device" {
+    for_each = var.root_block_device
 
     content {
-      sid           = try(statement.value.sid, null)
-      actions       = try(statement.value.actions, null)
-      not_actions   = try(statement.value.not_actions, null)
-      effect        = try(statement.value.effect, null)
-      resources     = try(statement.value.resources, [aws_sqs_queue.dlq[0].arn])
-      not_resources = try(statement.value.not_resources, null)
+      delete_on_termination = try(root_block_device.value.delete_on_termination, null)
+      encrypted             = try(root_block_device.value.encrypted, null)
+      iops                  = try(root_block_device.value.iops, null)
+      kms_key_id            = lookup(root_block_device.value, "kms_key_id", null)
+      volume_size           = try(root_block_device.value.volume_size, null)
+      volume_type           = try(root_block_device.value.volume_type, null)
+      throughput            = try(root_block_device.value.throughput, null)
+      tags                  = try(root_block_device.value.tags, null)
+    }
+  }
 
-      dynamic "principals" {
-        for_each = try(statement.value.principals, [])
+  dynamic "ebs_block_device" {
+    for_each = var.ebs_block_device
+
+    content {
+      delete_on_termination = try(ebs_block_device.value.delete_on_termination, null)
+      device_name           = ebs_block_device.value.device_name
+      encrypted             = try(ebs_block_device.value.encrypted, null)
+      iops                  = try(ebs_block_device.value.iops, null)
+      kms_key_id            = lookup(ebs_block_device.value, "kms_key_id", null)
+      snapshot_id           = lookup(ebs_block_device.value, "snapshot_id", null)
+      volume_size           = try(ebs_block_device.value.volume_size, null)
+      volume_type           = try(ebs_block_device.value.volume_type, null)
+      throughput            = try(ebs_block_device.value.throughput, null)
+      tags                  = try(ebs_block_device.value.tags, null)
+    }
+  }
+
+  dynamic "ephemeral_block_device" {
+    for_each = var.ephemeral_block_device
+
+    content {
+      device_name  = ephemeral_block_device.value.device_name
+      no_device    = try(ephemeral_block_device.value.no_device, null)
+      virtual_name = try(ephemeral_block_device.value.virtual_name, null)
+    }
+  }
+
+  dynamic "metadata_options" {
+    for_each = length(var.metadata_options) > 0 ? [var.metadata_options] : []
+
+    content {
+      http_endpoint               = try(metadata_options.value.http_endpoint, "enabled")
+      http_tokens                 = try(metadata_options.value.http_tokens, "optional")
+      http_put_response_hop_limit = try(metadata_options.value.http_put_response_hop_limit, 1)
+      instance_metadata_tags      = try(metadata_options.value.instance_metadata_tags, null)
+    }
+  }
+
+  dynamic "network_interface" {
+    for_each = var.network_interface
+
+    content {
+      device_index          = network_interface.value.device_index
+      network_interface_id  = lookup(network_interface.value, "network_interface_id", null)
+      delete_on_termination = try(network_interface.value.delete_on_termination, false)
+    }
+  }
+
+  dynamic "private_dns_name_options" {
+    for_each = length(var.private_dns_name_options) > 0 ? [var.private_dns_name_options] : []
+
+    content {
+      hostname_type                        = try(private_dns_name_options.value.hostname_type, null)
+      enable_resource_name_dns_a_record    = try(private_dns_name_options.value.enable_resource_name_dns_a_record, null)
+      enable_resource_name_dns_aaaa_record = try(private_dns_name_options.value.enable_resource_name_dns_aaaa_record, null)
+    }
+  }
+
+  dynamic "launch_template" {
+    for_each = length(var.launch_template) > 0 ? [var.launch_template] : []
+
+    content {
+      id      = lookup(var.launch_template, "id", null)
+      name    = lookup(var.launch_template, "name", null)
+      version = lookup(var.launch_template, "version", null)
+    }
+  }
+
+  dynamic "maintenance_options" {
+    for_each = length(var.maintenance_options) > 0 ? [var.maintenance_options] : []
+
+    content {
+      auto_recovery = try(maintenance_options.value.auto_recovery, null)
+    }
+  }
+
+  enclave_options {
+    enabled = var.enclave_options_enabled
+  }
+
+  source_dest_check                    = length(var.network_interface) > 0 ? null : var.source_dest_check
+  disable_api_termination              = var.disable_api_termination
+  disable_api_stop                     = var.disable_api_stop
+  instance_initiated_shutdown_behavior = var.instance_initiated_shutdown_behavior
+  placement_group                      = var.placement_group
+  tenancy                              = var.tenancy
+  host_id                              = var.host_id
+
+  credit_specification {
+    cpu_credits = local.is_t_instance_type ? var.cpu_credits : null
+  }
+
+  timeouts {
+    create = try(var.timeouts.create, null)
+    update = try(var.timeouts.update, null)
+    delete = try(var.timeouts.delete, null)
+  }
+
+  tags        = merge({ "Name" = var.name }, var.instance_tags, var.tags)
+  volume_tags = var.enable_volume_tags ? merge({ "Name" = var.name }, var.volume_tags) : null
+}
+
+################################################################################
+# Instance - Ignore AMI Changes
+################################################################################
+
+resource "aws_instance" "ignore_ami" {
+  count = local.create && var.ignore_ami_changes && !var.create_spot_instance ? 1 : 0
+
+  ami                  = local.ami
+  instance_type        = var.instance_type
+  cpu_core_count       = var.cpu_core_count
+  cpu_threads_per_core = var.cpu_threads_per_core
+  hibernation          = var.hibernation
+
+  user_data                   = var.user_data
+  user_data_base64            = var.user_data_base64
+  user_data_replace_on_change = var.user_data_replace_on_change
+
+  availability_zone      = var.availability_zone
+  subnet_id              = var.subnet_id
+  vpc_security_group_ids = var.vpc_security_group_ids
+
+  key_name             = var.key_name
+  monitoring           = var.monitoring
+  get_password_data    = var.get_password_data
+  iam_instance_profile = var.create_iam_instance_profile ? aws_iam_instance_profile.this[0].name : var.iam_instance_profile
+
+  associate_public_ip_address = var.associate_public_ip_address
+  private_ip                  = var.private_ip
+  secondary_private_ips       = var.secondary_private_ips
+  ipv6_address_count          = var.ipv6_address_count
+  ipv6_addresses              = var.ipv6_addresses
+
+  ebs_optimized = var.ebs_optimized
+
+  dynamic "cpu_options" {
+    for_each = length(var.cpu_options) > 0 ? [var.cpu_options] : []
+
+    content {
+      core_count       = try(cpu_options.value.core_count, null)
+      threads_per_core = try(cpu_options.value.threads_per_core, null)
+      amd_sev_snp      = try(cpu_options.value.amd_sev_snp, null)
+    }
+  }
+
+  dynamic "capacity_reservation_specification" {
+    for_each = length(var.capacity_reservation_specification) > 0 ? [var.capacity_reservation_specification] : []
+
+    content {
+      capacity_reservation_preference = try(capacity_reservation_specification.value.capacity_reservation_preference, null)
+
+      dynamic "capacity_reservation_target" {
+        for_each = try([capacity_reservation_specification.value.capacity_reservation_target], [])
 
         content {
-          type        = principals.value.type
-          identifiers = principals.value.identifiers
-        }
-      }
-
-      dynamic "not_principals" {
-        for_each = try(statement.value.not_principals, [])
-
-        content {
-          type        = not_principals.value.type
-          identifiers = not_principals.value.identifiers
-        }
-      }
-
-      dynamic "condition" {
-        for_each = try(statement.value.conditions, [])
-
-        content {
-          test     = condition.value.test
-          values   = condition.value.values
-          variable = condition.value.variable
+          capacity_reservation_id                 = try(capacity_reservation_target.value.capacity_reservation_id, null)
+          capacity_reservation_resource_group_arn = try(capacity_reservation_target.value.capacity_reservation_resource_group_arn, null)
         }
       }
     }
   }
-}
 
-resource "aws_sqs_queue_policy" "dlq" {
-  count = var.create && var.create_dlq && var.create_dlq_queue_policy ? 1 : 0
+  dynamic "root_block_device" {
+    for_each = var.root_block_device
 
-  queue_url = aws_sqs_queue.dlq[0].url
-  policy    = data.aws_iam_policy_document.dlq[0].json
+    content {
+      delete_on_termination = try(root_block_device.value.delete_on_termination, null)
+      encrypted             = try(root_block_device.value.encrypted, null)
+      iops                  = try(root_block_device.value.iops, null)
+      kms_key_id            = lookup(root_block_device.value, "kms_key_id", null)
+      volume_size           = try(root_block_device.value.volume_size, null)
+      volume_type           = try(root_block_device.value.volume_type, null)
+      throughput            = try(root_block_device.value.throughput, null)
+      tags                  = try(root_block_device.value.tags, null)
+    }
+  }
+
+  dynamic "ebs_block_device" {
+    for_each = var.ebs_block_device
+
+    content {
+      delete_on_termination = try(ebs_block_device.value.delete_on_termination, null)
+      device_name           = ebs_block_device.value.device_name
+      encrypted             = try(ebs_block_device.value.encrypted, null)
+      iops                  = try(ebs_block_device.value.iops, null)
+      kms_key_id            = lookup(ebs_block_device.value, "kms_key_id", null)
+      snapshot_id           = lookup(ebs_block_device.value, "snapshot_id", null)
+      volume_size           = try(ebs_block_device.value.volume_size, null)
+      volume_type           = try(ebs_block_device.value.volume_type, null)
+      throughput            = try(ebs_block_device.value.throughput, null)
+      tags                  = try(ebs_block_device.value.tags, null)
+    }
+  }
+
+  dynamic "ephemeral_block_device" {
+    for_each = var.ephemeral_block_device
+
+    content {
+      device_name  = ephemeral_block_device.value.device_name
+      no_device    = try(ephemeral_block_device.value.no_device, null)
+      virtual_name = try(ephemeral_block_device.value.virtual_name, null)
+    }
+  }
+
+  dynamic "metadata_options" {
+    for_each = length(var.metadata_options) > 0 ? [var.metadata_options] : []
+
+    content {
+      http_endpoint               = try(metadata_options.value.http_endpoint, "enabled")
+      http_tokens                 = try(metadata_options.value.http_tokens, "optional")
+      http_put_response_hop_limit = try(metadata_options.value.http_put_response_hop_limit, 1)
+      instance_metadata_tags      = try(metadata_options.value.instance_metadata_tags, null)
+    }
+  }
+
+  dynamic "network_interface" {
+    for_each = var.network_interface
+
+    content {
+      device_index          = network_interface.value.device_index
+      network_interface_id  = lookup(network_interface.value, "network_interface_id", null)
+      delete_on_termination = try(network_interface.value.delete_on_termination, false)
+    }
+  }
+
+  dynamic "private_dns_name_options" {
+    for_each = length(var.private_dns_name_options) > 0 ? [var.private_dns_name_options] : []
+
+    content {
+      hostname_type                        = try(private_dns_name_options.value.hostname_type, null)
+      enable_resource_name_dns_a_record    = try(private_dns_name_options.value.enable_resource_name_dns_a_record, null)
+      enable_resource_name_dns_aaaa_record = try(private_dns_name_options.value.enable_resource_name_dns_aaaa_record, null)
+    }
+  }
+
+  dynamic "launch_template" {
+    for_each = length(var.launch_template) > 0 ? [var.launch_template] : []
+
+    content {
+      id      = lookup(var.launch_template, "id", null)
+      name    = lookup(var.launch_template, "name", null)
+      version = lookup(var.launch_template, "version", null)
+    }
+  }
+
+  dynamic "maintenance_options" {
+    for_each = length(var.maintenance_options) > 0 ? [var.maintenance_options] : []
+
+    content {
+      auto_recovery = try(maintenance_options.value.auto_recovery, null)
+    }
+  }
+
+  enclave_options {
+    enabled = var.enclave_options_enabled
+  }
+
+  source_dest_check                    = length(var.network_interface) > 0 ? null : var.source_dest_check
+  disable_api_termination              = var.disable_api_termination
+  disable_api_stop                     = var.disable_api_stop
+  instance_initiated_shutdown_behavior = var.instance_initiated_shutdown_behavior
+  placement_group                      = var.placement_group
+  tenancy                              = var.tenancy
+  host_id                              = var.host_id
+
+  credit_specification {
+    cpu_credits = local.is_t_instance_type ? var.cpu_credits : null
+  }
+
+  timeouts {
+    create = try(var.timeouts.create, null)
+    update = try(var.timeouts.update, null)
+    delete = try(var.timeouts.delete, null)
+  }
+
+  tags        = merge({ "Name" = var.name }, var.instance_tags, var.tags)
+  volume_tags = var.enable_volume_tags ? merge({ "Name" = var.name }, var.volume_tags) : null
+
+  lifecycle {
+    ignore_changes = [
+      ami
+    ]
+  }
 }
 
 ################################################################################
-# Re-drive Allow Policy
+# Spot Instance
 ################################################################################
 
-resource "aws_sqs_queue_redrive_allow_policy" "this" {
-  count = var.create && !var.create_dlq && length(var.redrive_allow_policy) > 0 ? 1 : 0
+resource "aws_spot_instance_request" "this" {
+  count = local.create && var.create_spot_instance ? 1 : 0
 
-  queue_url            = aws_sqs_queue.this[0].url
-  redrive_allow_policy = jsonencode(var.redrive_allow_policy)
+  ami                  = local.ami
+  instance_type        = var.instance_type
+  cpu_core_count       = var.cpu_core_count
+  cpu_threads_per_core = var.cpu_threads_per_core
+  hibernation          = var.hibernation
+
+  user_data                   = var.user_data
+  user_data_base64            = var.user_data_base64
+  user_data_replace_on_change = var.user_data_replace_on_change
+
+  availability_zone      = var.availability_zone
+  subnet_id              = var.subnet_id
+  vpc_security_group_ids = var.vpc_security_group_ids
+
+  key_name             = var.key_name
+  monitoring           = var.monitoring
+  get_password_data    = var.get_password_data
+  iam_instance_profile = var.create_iam_instance_profile ? aws_iam_instance_profile.this[0].name : var.iam_instance_profile
+
+  associate_public_ip_address = var.associate_public_ip_address
+  private_ip                  = var.private_ip
+  secondary_private_ips       = var.secondary_private_ips
+  ipv6_address_count          = var.ipv6_address_count
+  ipv6_addresses              = var.ipv6_addresses
+
+  ebs_optimized = var.ebs_optimized
+
+  # Spot request specific attributes
+  spot_price                     = var.spot_price
+  wait_for_fulfillment           = var.spot_wait_for_fulfillment
+  spot_type                      = var.spot_type
+  launch_group                   = var.spot_launch_group
+  block_duration_minutes         = var.spot_block_duration_minutes
+  instance_interruption_behavior = var.spot_instance_interruption_behavior
+  valid_until                    = var.spot_valid_until
+  valid_from                     = var.spot_valid_from
+  # End spot request specific attributes
+
+  dynamic "cpu_options" {
+    for_each = length(var.cpu_options) > 0 ? [var.cpu_options] : []
+
+    content {
+      core_count       = try(cpu_options.value.core_count, null)
+      threads_per_core = try(cpu_options.value.threads_per_core, null)
+      amd_sev_snp      = try(cpu_options.value.amd_sev_snp, null)
+    }
+  }
+
+  dynamic "capacity_reservation_specification" {
+    for_each = length(var.capacity_reservation_specification) > 0 ? [var.capacity_reservation_specification] : []
+
+    content {
+      capacity_reservation_preference = try(capacity_reservation_specification.value.capacity_reservation_preference, null)
+
+      dynamic "capacity_reservation_target" {
+        for_each = try([capacity_reservation_specification.value.capacity_reservation_target], [])
+        content {
+          capacity_reservation_id                 = try(capacity_reservation_target.value.capacity_reservation_id, null)
+          capacity_reservation_resource_group_arn = try(capacity_reservation_target.value.capacity_reservation_resource_group_arn, null)
+        }
+      }
+    }
+  }
+
+  dynamic "root_block_device" {
+    for_each = var.root_block_device
+
+    content {
+      delete_on_termination = try(root_block_device.value.delete_on_termination, null)
+      encrypted             = try(root_block_device.value.encrypted, null)
+      iops                  = try(root_block_device.value.iops, null)
+      kms_key_id            = lookup(root_block_device.value, "kms_key_id", null)
+      volume_size           = try(root_block_device.value.volume_size, null)
+      volume_type           = try(root_block_device.value.volume_type, null)
+      throughput            = try(root_block_device.value.throughput, null)
+      tags                  = try(root_block_device.value.tags, null)
+    }
+  }
+
+  dynamic "ebs_block_device" {
+    for_each = var.ebs_block_device
+
+    content {
+      delete_on_termination = try(ebs_block_device.value.delete_on_termination, null)
+      device_name           = ebs_block_device.value.device_name
+      encrypted             = try(ebs_block_device.value.encrypted, null)
+      iops                  = try(ebs_block_device.value.iops, null)
+      kms_key_id            = lookup(ebs_block_device.value, "kms_key_id", null)
+      snapshot_id           = lookup(ebs_block_device.value, "snapshot_id", null)
+      volume_size           = try(ebs_block_device.value.volume_size, null)
+      volume_type           = try(ebs_block_device.value.volume_type, null)
+      throughput            = try(ebs_block_device.value.throughput, null)
+      tags                  = try(ebs_block_device.value.tags, null)
+    }
+  }
+
+  dynamic "ephemeral_block_device" {
+    for_each = var.ephemeral_block_device
+
+    content {
+      device_name  = ephemeral_block_device.value.device_name
+      no_device    = try(ephemeral_block_device.value.no_device, null)
+      virtual_name = try(ephemeral_block_device.value.virtual_name, null)
+    }
+  }
+
+  dynamic "metadata_options" {
+    for_each = length(var.metadata_options) > 0 ? [var.metadata_options] : []
+
+    content {
+      http_endpoint               = try(metadata_options.value.http_endpoint, "enabled")
+      http_tokens                 = try(metadata_options.value.http_tokens, "optional")
+      http_put_response_hop_limit = try(metadata_options.value.http_put_response_hop_limit, 1)
+      instance_metadata_tags      = try(metadata_options.value.instance_metadata_tags, null)
+    }
+  }
+
+  dynamic "network_interface" {
+    for_each = var.network_interface
+
+    content {
+      device_index          = network_interface.value.device_index
+      network_interface_id  = lookup(network_interface.value, "network_interface_id", null)
+      delete_on_termination = try(network_interface.value.delete_on_termination, false)
+    }
+  }
+
+  dynamic "launch_template" {
+    for_each = length(var.launch_template) > 0 ? [var.launch_template] : []
+
+    content {
+      id      = lookup(var.launch_template, "id", null)
+      name    = lookup(var.launch_template, "name", null)
+      version = lookup(var.launch_template, "version", null)
+    }
+  }
+
+  enclave_options {
+    enabled = var.enclave_options_enabled
+  }
+
+  source_dest_check                    = length(var.network_interface) > 0 ? null : var.source_dest_check
+  disable_api_termination              = var.disable_api_termination
+  instance_initiated_shutdown_behavior = var.instance_initiated_shutdown_behavior
+  placement_group                      = var.placement_group
+  tenancy                              = var.tenancy
+  host_id                              = var.host_id
+
+  credit_specification {
+    cpu_credits = local.is_t_instance_type ? var.cpu_credits : null
+  }
+
+  timeouts {
+    create = try(var.timeouts.create, null)
+    delete = try(var.timeouts.delete, null)
+  }
+
+  tags        = merge({ "Name" = var.name }, var.instance_tags, var.tags)
+  volume_tags = var.enable_volume_tags ? merge({ "Name" = var.name }, var.volume_tags) : null
 }
 
-resource "aws_sqs_queue_redrive_allow_policy" "dlq" {
-  count = var.create && var.create_dlq && var.create_dlq_redrive_allow_policy ? 1 : 0
+################################################################################
+# IAM Role / Instance Profile
+################################################################################
 
-  queue_url = aws_sqs_queue.dlq[0].url
-  redrive_allow_policy = jsonencode(merge(
-    {
-      redrivePermission = "byQueue",
-      sourceQueueArns   = [aws_sqs_queue.this[0].arn]
-    },
-    var.dlq_redrive_allow_policy)
+locals {
+  iam_role_name = try(coalesce(var.iam_role_name, var.name), "")
+}
+
+data "aws_iam_policy_document" "assume_role_policy" {
+  count = var.create && var.create_iam_instance_profile ? 1 : 0
+
+  statement {
+    sid     = "EC2AssumeRole"
+    actions = ["sts:AssumeRole"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["ec2.${data.aws_partition.current.dns_suffix}"]
+    }
+  }
+}
+
+resource "aws_iam_role" "this" {
+  count = var.create && var.create_iam_instance_profile ? 1 : 0
+
+  name        = var.iam_role_use_name_prefix ? null : local.iam_role_name
+  name_prefix = var.iam_role_use_name_prefix ? "${local.iam_role_name}-" : null
+  path        = var.iam_role_path
+  description = var.iam_role_description
+
+  assume_role_policy    = data.aws_iam_policy_document.assume_role_policy[0].json
+  permissions_boundary  = var.iam_role_permissions_boundary
+  force_detach_policies = true
+
+  tags = merge(var.tags, var.iam_role_tags)
+}
+
+resource "aws_iam_role_policy_attachment" "this" {
+  for_each = { for k, v in var.iam_role_policies : k => v if var.create && var.create_iam_instance_profile }
+
+  policy_arn = each.value
+  role       = aws_iam_role.this[0].name
+}
+
+resource "aws_iam_instance_profile" "this" {
+  count = var.create && var.create_iam_instance_profile ? 1 : 0
+
+  role = aws_iam_role.this[0].name
+
+  name        = var.iam_role_use_name_prefix ? null : local.iam_role_name
+  name_prefix = var.iam_role_use_name_prefix ? "${local.iam_role_name}-" : null
+  path        = var.iam_role_path
+
+  tags = merge(var.tags, var.iam_role_tags)
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+################################################################################
+# Elastic IP
+################################################################################
+
+resource "aws_eip" "this" {
+  count = local.create && var.create_eip && !var.create_spot_instance ? 1 : 0
+
+  instance = try(
+    aws_instance.this[0].id,
+    aws_instance.ignore_ami[0].id,
   )
+
+  domain = var.eip_domain
+
+  tags = merge(var.tags, var.eip_tags)
 }
